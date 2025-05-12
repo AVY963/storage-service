@@ -1,0 +1,24 @@
+db:
+  host: localhost
+  port: 5433
+  user: postgres
+  password: postgres
+  dbname: storage_db
+  sslmode: disable
+
+http:
+  port: 8080
+  readTimeout: 15
+  writeTimeout: 15
+  shutdownTimeout: 5
+
+app:
+  uploadLimiterConcurrency: 10
+  listLimiterConcurrency: 100
+  uploadDir: "./uploads"
+
+jwt:
+  accessTokenExpiration: 15     # 15 минут
+  refreshTokenExpiration: 168   # 7 дней (24*7=168 часов)
+  accessTokenSecret: "access_secret_key_change_in_production"
+  refreshTokenSecret: "refresh_secret_key_change_in_production"

@@ -1,0 +1,178 @@
+openapi: 3.0.0
+info:
+  title: Go Auth & File API
+  version: 1.0.0
+  description: API для аутентификации пользователей и управления файлами
+
+paths:
+  /login:
+    post:
+      summary: Вход пользователя
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Успешный вход
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "401":
+          description: Неверные учетные данные
+
+  /register:
+    post:
+      summary: Регистрация пользователя
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: Пользователь создан
+        "400":
+          description: Неверные данные
+
+  /logout:
+    post:
+      summary: Выход пользователя
+      responses:
+        "200":
+          description: Успешный выход
+        "401":
+          description: Неавторизован
+
+  /refresh:
+    post:
+      summary: Обновление токена
+      responses:
+        "200":
+          description: Токен обновлён
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefreshResponse"
+
+  /list:
+    get:
+      summary: Получить список файлов
+      responses:
+        "200":
+          description: Список файлов
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+
+  /upload:
+    post:
+      summary: Загрузка файла
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Файл загружен
+        "400":
+          description: Ошибка при загрузке
+
+  /download/{filename}:
+    get:
+      summary: Скачивание файла
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Файл найден
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Файл не найден
+
+  /delete/{filename}:
+    delete:
+      summary: Удаление файла
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Файл удален
+        "404":
+          description: Файл не найден
+
+components:
+  schemas:
+    RegisterRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 6
+      required:
+        - email
+        - password
+
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+      required:
+        - email
+        - password
+
+    TokenResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        user:
+          $ref: "#/components/schemas/UserInfo"
+
+    UserInfo:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        email:
+          type: string
+          format: email
+
+    RefreshResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
