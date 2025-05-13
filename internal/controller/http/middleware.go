@@ -25,27 +25,34 @@ func NewAuthMiddleware(tokenManager *auth.TokenManager) *AuthMiddleware {
 // Middleware проверяет JWT токен в заголовке Authorization
 func (m *AuthMiddleware) Middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Извлекаем токен из заголовка
+		var token string
+
+		// 1. Попытка взять из заголовка Authorization
 		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
+		if authHeader != "" {
+			parts := strings.Split(authHeader, " ")
+			if len(parts) == 2 && parts[0] == "Bearer" {
+				token = parts[1]
+			}
+		}
+
+		// 2. Если не найден — пробуем взять из cookie
+		if token == "" {
+			cookie, err := c.Cookie("access_token")
+			if err == nil {
+				token = cookie
+			}
+		}
+
+		// 3. Если токена всё ещё нет — 401
+		if token == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-				"error": "отсутствует заголовок авторизации",
+				"error": "токен авторизации не найден",
 			})
 			return
 		}
 
-		// Проверяем формат токена
-		headerParts := strings.Split(authHeader, " ")
-		if len(headerParts) != 2 || headerParts[0] != "Bearer" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-				"error": "неверный формат токена",
-			})
-			return
-		}
-
-		token := headerParts[1]
-
-		// Проверяем валидность токена
+		// 4. Парсим токен
 		claims, err := m.tokenManager.ParseAccessToken(token)
 		if err != nil {
 			if err == auth.ErrExpiredToken {
@@ -61,12 +68,11 @@ func (m *AuthMiddleware) Middleware() gin.HandlerFunc {
 			return
 		}
 
-		// Добавляем ID пользователя в контекст запроса
+		// 5. Добавляем ID в контекст
 		c.Set("userID", claims.UserID)
 		c.Next()
 	}
 }
-
 // GetUserID извлекает ID пользователя из контекста
 func GetUserID(c *gin.Context) (uint, bool) {
 	userID, exists := c.Get("userID")
