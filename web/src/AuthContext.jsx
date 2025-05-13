@@ -33,19 +33,26 @@ export function AuthProvider({ children }) {
   };
 
   const refresh = async () => {
-    const res = await fetch("http://localhost:8080/api/auth/refresh", {
-      method: "POST",
-      credentials: "include",
-    });
-    if (res.ok) {
-      const data = await res.json();
-      setAccessToken(data.access_token);
-      setUser(data.user);
-    } else {
+    try {
+      const res = await fetch("http://localhost:8080/api/auth/refresh", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAccessToken(data.access_token);
+        setUser(data.user);
+      } else {
+        setUser(null);
+        setAccessToken(null);
+      }
+    } catch (error) {
+      console.error("Ошибка при обновлении токена:", error);
       setUser(null);
       setAccessToken(null);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
