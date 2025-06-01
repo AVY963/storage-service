@@ -8,33 +8,79 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   const login = async (email, password) => {
-    const res = await fetch("http://localhost:8080/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ email, password })
-    });
-    if (res.ok) {
+    try {
+      const res = await fetch("http://localhost:8081/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email, password })
+      });
+      
       const data = await res.json();
-      setUser(data.user);
-      setAccessToken(data.access_token);
-      return true;
+      
+      if (res.ok) {
+        setUser(data.user);
+        setAccessToken(data.access_token);
+        return { success: true };
+      } else {
+        return { 
+          success: false, 
+          error: data.error || "Ошибка авторизации" 
+        };
+      }
+    } catch (error) {
+      console.error("Ошибка при авторизации:", error);
+      return { 
+        success: false, 
+        error: "Ошибка соединения с сервером" 
+      };
     }
-    return false;
+  };
+
+  const register = async (email, password) => {
+    try {
+      const res = await fetch("http://localhost:8081/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      
+      const data = await res.json();
+      
+      if (res.ok) {
+        return { success: true };
+      } else {
+        return { 
+          success: false, 
+          error: data.error || "Ошибка регистрации" 
+        };
+      }
+    } catch (error) {
+      console.error("Ошибка при регистрации:", error);
+      return { 
+        success: false, 
+        error: "Ошибка соединения с сервером" 
+      };
+    }
   };
 
   const logout = async () => {
-    await fetch("http://localhost:8080/api/auth/logout", {
-      method: "POST",
-      credentials: "include",
-    });
-    setUser(null);
-    setAccessToken(null);
+    try {
+      await fetch("http://localhost:8081/api/auth/logout", {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch (error) {
+      console.error("Ошибка при выходе:", error);
+    } finally {
+      setUser(null);
+      setAccessToken(null);
+    }
   };
 
   const refresh = async () => {
     try {
-      const res = await fetch("http://localhost:8080/api/auth/refresh", {
+      const res = await fetch("http://localhost:8081/api/auth/refresh", {
         method: "POST",
         credentials: "include",
       });
@@ -60,7 +106,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, accessToken, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, accessToken, login, register, logout, loading }}>
       {children}
     </AuthContext.Provider>
   );

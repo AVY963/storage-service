@@ -1,8 +1,24 @@
 openapi: 3.0.0
 info:
-  title: Go Auth & File API
+  title: File Storage API
   version: 1.0.0
-  description: API для аутентификации пользователей и управления файлами
+  description: API для хранения зашифрованных файлов
+
+servers:
+  - url: http://localhost:8080
+    description: Локальный сервер разработки
+  - url: https://api.example.com
+    description: Продакшн сервер
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
 
 paths:
   /login:
@@ -59,22 +75,61 @@ paths:
               schema:
                 $ref: "#/components/schemas/RefreshResponse"
 
-  /list:
+  /api/files/list:
     get:
-      summary: Получить список файлов
+      security:
+        - bearerAuth: []
+      summary: Получение списка файлов
+      description: Возвращает список всех файлов с метаданными
       responses:
-        "200":
+        '200':
           description: Список файлов
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  type: string
+                type: object
+                properties:
+                  files:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                          description: Имя файла
+                        created_at:
+                          type: string
+                          format: date-time
+                          description: Дата создания
+                        updated_at:
+                          type: string
+                          format: date-time
+                          description: Дата обновления
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
 
-  /upload:
+  /api/files/upload:
     post:
-      summary: Загрузка файла
+      security:
+        - bearerAuth: []
+      summary: Загрузка зашифрованного файла
+      description: Загружает зашифрованный файл вместе с ключом и вектором инициализации
       requestBody:
         required: true
         content:
@@ -85,46 +140,181 @@ paths:
                 file:
                   type: string
                   format: binary
+                  description: Зашифрованный файл (AES-256-GCM)
+                key:
+                  type: string
+                  format: binary
+                  description: Зашифрованный AES ключ (через GPG/Yubikey)
+                nonce:
+                  type: string
+                  format: binary
+                  description: Вектор инициализации для AES-GCM (12 байт)
+                filename:
+                  type: string
+                  description: Оригинальное имя файла
+              required:
+                - file
+                - key
+                - nonce
+                - filename
       responses:
-        "200":
-          description: Файл загружен
-        "400":
-          description: Ошибка при загрузке
-
-  /download/{filename}:
-    get:
-      summary: Скачивание файла
-      parameters:
-        - name: filename
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Файл найден
+        '200':
+          description: Файл успешно загружен
           content:
-            application/octet-stream:
+            application/json:
               schema:
-                type: string
-                format: binary
-        "404":
-          description: Файл не найден
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  filename:
+                    type: string
+        '400':
+          description: Ошибка в запросе
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
 
-  /delete/{filename}:
-    delete:
-      summary: Удаление файла
+  /api/files/download/{filename}:
+    get:
+      security:
+        - bearerAuth: []
+      summary: Скачивание зашифрованного файла
+      description: Возвращает зашифрованный файл, ключ и вектор инициализации
       parameters:
         - name: filename
           in: path
           required: true
           schema:
             type: string
+          description: Имя файла для скачивания
       responses:
-        "200":
-          description: Файл удален
-        "404":
+        '200':
+          description: Зашифрованные данные файла
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  file:
+                    type: array
+                    items:
+                      type: integer
+                    description: Зашифрованные данные файла
+                  key:
+                    type: array
+                    items:
+                      type: integer
+                    description: Зашифрованный AES ключ
+                  nonce:
+                    type: array
+                    items:
+                      type: integer
+                    description: Вектор инициализации
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '404':
           description: Файл не найден
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
+  /api/files/delete/{filename}:
+    delete:
+      security:
+        - bearerAuth: []
+      summary: Удаление файла
+      description: Удаляет файл и его метаданные
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Имя файла для удаления
+      responses:
+        '200':
+          description: Файл успешно удален
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '404':
+          description: Файл не найден
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
 
 components:
   schemas:

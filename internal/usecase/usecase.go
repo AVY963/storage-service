@@ -9,15 +9,11 @@ import (
 	"tages/internal/models"
 )
 
-type FileStorage interface {
-	Save(filename string, data []byte) error
-	Read(filename string) ([]byte, error)
-	ReadStream(filename string) (models.FileReader, error)
-	Delete(filename string) error
-}
-
 type Repository interface {
-	UpdateFileMeta(ctx context.Context, filname *models.FileMeta) error
+	SaveFile(filename string, data []byte, key []byte, nonce []byte) error
+	ReadFile(filename string) (*models.EncryptedFileData, error)
+	DeleteFile(ctx context.Context, filename string) error
+	UpdateFileMeta(ctx context.Context, fileMeta *models.FileMeta) error
 	IsFileExists(ctx context.Context, filename string) (bool, error)
 	SaveFileMeta(ctx context.Context, file *models.FileMeta) error
 	GetFilesMeta(ctx context.Context) ([]*models.FileMeta, error)
@@ -25,54 +21,57 @@ type Repository interface {
 }
 
 type Usecase struct {
-	storage FileStorage
-	r       Repository
+	r Repository
 }
 
-func New(storage FileStorage, r Repository) *Usecase {
+func New(r Repository) *Usecase {
 	return &Usecase{
-		storage: storage,
-		r:       r,
+		r: r,
 	}
 }
-func (u *Usecase) Upload(ctx context.Context, filename string, data []byte) error {
-	log.Printf("INFO: Processing upload request for file: %s (%d bytes)", filename, len(data))
 
-	if err := u.storage.Save(filename, data); err != nil {
-		return fmt.Errorf("failed to upload file %s: %w", filename, err)
+func (u *Usecase) Upload(ctx context.Context, data *models.EncryptedFileData) error {
+	log.Printf("INFO: Processing upload request for file: %s", data.Filename)
+
+	if err := u.r.SaveFile(data.Filename, data.File, data.Key, data.Nonce); err != nil {
+		return fmt.Errorf("failed to upload file %s: %w", data.Filename, err)
 	}
 
-	exists, err := u.r.IsFileExists(ctx, filename)
+	exists, err := u.r.IsFileExists(ctx, data.Filename)
 	if err != nil {
-		return fmt.Errorf("failed to check if file exists %s: %w", filename, err)
+		return fmt.Errorf("failed to check if file exists %s: %w", data.Filename, err)
 	}
 
 	now := time.Now()
 	meta := &models.FileMeta{
-		Name:      filename,
-		UpdatedAt: now,
+		Name:         data.Filename,
+		UpdatedAt:    now,
+		EncryptedKey: data.Key,
+		Nonce:        data.Nonce,
 	}
 	if !exists {
 		meta.CreatedAt = now
 	}
 
 	if err := u.r.SaveFileMeta(ctx, meta); err != nil {
-		return fmt.Errorf("failed to save file metadata for %s: %w", filename, err)
+		return fmt.Errorf("failed to save file metadata for %s: %w", data.Filename, err)
 	}
 
-	log.Printf("INFO: Successfully uploaded file: %s", filename)
+	log.Printf("INFO: Successfully uploaded file: %s", data.Filename)
 	return nil
 }
 
-func (u *Usecase) Download(filename string) (models.FileReader, error) {
+func (u *Usecase) Download(ctx context.Context, filename string) (*models.EncryptedFileData, error) {
 	log.Printf("INFO: Processing download request for file: %s", filename)
-	reader, err := u.storage.ReadStream(filename)
+
+	data, err := u.r.ReadFile(filename)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download file %s: %w", filename, err)
 	}
 
-	log.Printf("INFO: File stream opened for download: %s", filename)
-	return reader, nil
+	log.Printf("INFO: Successfully downloaded file: %s", filename)
+	log.Printf("INFO: File data: %v", data)
+	return data, nil
 }
 
 func (u *Usecase) ListFiles(ctx context.Context) ([]*models.FileMeta, error) {
@@ -91,12 +90,8 @@ func (u *Usecase) ListFiles(ctx context.Context) ([]*models.FileMeta, error) {
 func (u *Usecase) DeleteFile(ctx context.Context, filename string) error {
 	log.Printf("INFO: Processing delete request for file: %s", filename)
 
-	if err := u.storage.Delete(filename); err != nil {
+	if err := u.r.DeleteFile(ctx, filename); err != nil {
 		return fmt.Errorf("failed to delete file from storage %s: %w", filename, err)
-	}
-
-	if err := u.r.DeleteFileMeta(ctx, filename); err != nil {
-		return fmt.Errorf("failed to delete file metadata for %s: %w", filename, err)
 	}
 
 	log.Printf("INFO: Successfully deleted file: %s", filename)

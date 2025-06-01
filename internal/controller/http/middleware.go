@@ -73,6 +73,7 @@ func (m *AuthMiddleware) Middleware() gin.HandlerFunc {
 		c.Next()
 	}
 }
+
 // GetUserID извлекает ID пользователя из контекста
 func GetUserID(c *gin.Context) (uint, bool) {
 	userID, exists := c.Get("userID")

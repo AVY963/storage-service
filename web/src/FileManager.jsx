@@ -45,11 +45,12 @@ import {
   VideoFile,
   AudioFile,
   Archive,
-  Description
+  Description,
+  ExitToApp
 } from '@mui/icons-material';
 
 export default function FileManager() {
-  const { accessToken } = useAuth();
+  const { accessToken, logout, login, register } = useAuth();
   const [file, setFile] = useState(null);
   const [fileList, setFileList] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -88,16 +89,47 @@ export default function FileManager() {
     try {
       setUploading(true);
       setUploadProgress(0);
-      
+
+      // Генерируем случайный AES ключ
+      const aesKey = await window.crypto.subtle.generateKey(
+        {
+          name: "AES-GCM",
+          length: 256
+        },
+        true,
+        ["encrypt", "decrypt"]
+      );
+
+      // Генерируем случайный вектор инициализации
+      const nonce = window.crypto.getRandomValues(new Uint8Array(12));
+
+      // Шифруем файл
+      const fileData = await file.arrayBuffer();
+      const encryptedFile = await window.crypto.subtle.encrypt(
+        {
+          name: "AES-GCM",
+          iv: nonce
+        },
+        aesKey,
+        fileData
+      );
+
+      // Экспортируем AES ключ
+      const exportedKey = await window.crypto.subtle.exportKey("raw", aesKey);
+
+      // Создаем FormData
       const formData = new FormData();
-      formData.append('file', file);
-      
-      // Используем XMLHttpRequest для отслеживания прогресса загрузки
+      formData.append('file', new Blob([new Uint8Array(encryptedFile)]));
+      formData.append('key', new Blob([new Uint8Array(exportedKey)]));
+      formData.append('nonce', new Blob([nonce]));
+      formData.append('filename', file.name);
+
+      // Отправляем зашифрованные данные на сервер
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', 'http://localhost:8080/api/files/upload');
-      xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
+      xhr.open("POST", "http://localhost:8080/api/files/upload");
+      xhr.setRequestHeader("Authorization", `Bearer ${accessToken}`);
       
-      xhr.upload.addEventListener('progress', (event) => {
+      xhr.upload.addEventListener("progress", (event) => {
         if (event.lengthComputable) {
           const progress = Math.round((event.loaded / event.total) * 100);
           setUploadProgress(progress);
@@ -105,52 +137,35 @@ export default function FileManager() {
       });
       
       xhr.onload = () => {
-        console.log("Статус ответа загрузки:", xhr.status);
-        console.log("Ответ загрузки:", xhr.responseText);
-        
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            const response = JSON.parse(xhr.responseText);
-            
-            if (response.success) {
-              const successMessage = response.message || 'Файл успешно загружен';
-              setSuccess(successMessage);
-              console.log("Файл успешно загружен:", file.name);
-            } else {
-              setError('Ошибка при загрузке файла: ' + (response.error || 'Неизвестная ошибка'));
-              console.error("Ошибка загрузки:", response.error);
-            }
-          } catch (e) {
-            console.error("Ошибка при разборе ответа:", e);
-            setSuccess('Файл загружен, но возникла ошибка при обработке ответа');
-          }
-          
+        if (xhr.status === 200 || xhr.status === 201) {
+          showAlert("Файл успешно загружен", "success");
           setFile(null);
           setFilePreview('');
           listFiles();
         } else {
+          let errorMessage = "Ошибка при загрузке файла";
           try {
-            const errorResponse = JSON.parse(xhr.responseText);
-            setError(`Ошибка при загрузке файла: ${errorResponse.error || xhr.status}`);
-            console.error("Ошибка загрузки:", errorResponse.error);
+            const errorData = JSON.parse(xhr.responseText);
+            if (errorData && errorData.error) {
+              errorMessage = `Ошибка: ${errorData.error}`;
+            }
           } catch (e) {
-            setError(`Ошибка при загрузке файла: ${xhr.status}`);
-            console.error("Ошибка при загрузке файла:", xhr.status);
+            // Если ответ не в формате JSON, используем стандартное сообщение
           }
+          showAlert(`${errorMessage} (${xhr.status})`, "error");
         }
         setUploading(false);
       };
       
-      xhr.onerror = (e) => {
-        console.error("Ошибка соединения с сервером:", e);
-        setError('Ошибка соединения с сервером');
+      xhr.onerror = () => {
+        showAlert("Ошибка соединения с сервером", "error");
         setUploading(false);
       };
       
       xhr.send(formData);
     } catch (err) {
-      console.error("Неожиданная ошибка при загрузке:", err);
-      setError(err.message || 'Произошла неизвестная ошибка');
+      console.error("Ошибка загрузки:", err);
+      showAlert(`Не удалось загрузить файл: ${err.message || 'Неизвестная ошибка'}`, "error");
       setUploading(false);
     }
   };
@@ -159,7 +174,7 @@ export default function FileManager() {
     try {
       setLoadingFiles(true);
       console.log("Отправка запроса на получение списка файлов...");
-      const res = await fetch('http://localhost:8080/api/files/list', {
+      const res = await fetch('http://localhost:8081/api/files/list', {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       
@@ -237,8 +252,6 @@ export default function FileManager() {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       
-      console.log("Статус ответа скачивания:", res.status);
-      
       if (!res.ok) {
         let errorMessage = `Ошибка при скачивании файла: ${res.status}`;
         try {
@@ -247,11 +260,37 @@ export default function FileManager() {
         } catch (e) {
           // Если ответ не в формате JSON, используем стандартное сообщение
         }
-        
         throw new Error(errorMessage);
       }
-      
-      const blob = await res.blob();
+
+      // Получаем зашифрованные данные
+      const encryptedData = await res.json();
+
+      // Импортируем AES ключ
+      const keyData = new Uint8Array(encryptedData.key);
+      const aesKey = await window.crypto.subtle.importKey(
+        "raw",
+        keyData,
+        {
+          name: "AES-GCM",
+          length: 256
+        },
+        true,
+        ["encrypt", "decrypt"]
+      );
+
+      // Расшифровываем файл
+      const decryptedData = await window.crypto.subtle.decrypt(
+        {
+          name: "AES-GCM",
+          iv: new Uint8Array(encryptedData.nonce)
+        },
+        aesKey,
+        new Uint8Array(encryptedData.file)
+      );
+
+      // Создаем и скачиваем файл
+      const blob = new Blob([decryptedData]);
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -261,11 +300,10 @@ export default function FileManager() {
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
       
-      console.log(`Файл ${filename} успешно скачан`);
-      setSuccess('Файл успешно скачан');
+      showAlert("Файл успешно скачан", "success");
     } catch (err) {
       console.error("Ошибка при скачивании:", err);
-      setError(err.message || 'Не удалось скачать файл');
+      showAlert(err.message || "Не удалось скачать файл", "error");
     } finally {
       setLoading(false);
     }
@@ -303,7 +341,7 @@ export default function FileManager() {
       setLoading(true);
       console.log(`Удаление файла: ${filename}`);
       
-      const res = await fetch(`http://localhost:8080/api/files/delete/${encodeURIComponent(filename)}`, {
+      const res = await fetch(`http://localhost:8081/api/files/delete/${encodeURIComponent(filename)}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${accessToken}` },
       });
@@ -419,6 +457,11 @@ export default function FileManager() {
           <Tooltip title="Обновить список файлов">
             <IconButton color="inherit" onClick={listFiles} disabled={loadingFiles}>
               <Refresh />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Выйти">
+            <IconButton color="inherit" onClick={logout} sx={{ ml: 1 }}>
+              <ExitToApp />
             </IconButton>
           </Tooltip>
         </Toolbar>
@@ -633,6 +676,8 @@ export default function FileManager() {
                           <ListItem 
                             sx={{ 
                               borderRadius: 1,
+                              py: 1.5,
+                              mb: 0.5,
                               transition: 'all 0.2s',
                               '&:hover': {
                                 backgroundColor: 'rgba(25, 118, 210, 0.04)'
@@ -644,12 +689,19 @@ export default function FileManager() {
                             </Avatar>
                             <ListItemText 
                               primary={
-                                <Typography variant="body1" fontWeight="medium">
-                                  {filename}
-                                </Typography>
+                                <Tooltip title={filename} placement="top-start">
+                                  <Typography variant="body1" fontWeight="medium" sx={{ 
+                                    maxWidth: { xs: '150px', sm: '200px', md: '250px' },
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap' 
+                                  }}>
+                                    {filename}
+                                  </Typography>
+                                </Tooltip>
                               }
                             />
-                            <ListItemSecondaryAction>
+                            <ListItemSecondaryAction sx={{ right: '8px' }}>
                               <Tooltip title="Скачать файл">
                                 <IconButton 
                                   onClick={() => download(filename)} 

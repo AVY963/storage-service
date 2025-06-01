@@ -12,7 +12,6 @@ import (
 	"tages/internal/auth"
 	"tages/internal/config"
 	handler "tages/internal/controller/http"
-	storage "tages/internal/repository/disk_storage"
 	"tages/internal/repository/pg"
 	"tages/internal/usecase"
 
@@ -44,9 +43,14 @@ func main() {
 
 	// Создаем репозитории и usecase
 	pgRepo := pg.New(pool)
-	fileStorage := storage.New(cfg.App.UploadDir, pgRepo)
+	// fileStorage := storage.New(cfg.App.UploadDir, pgRepo)
 
-	fileUsecase := usecase.New(fileStorage, pgRepo)
+	// Достаем и расшифровываем мастер-ключ
+	// masterKey, err := crypto.DecryptMasterKey()
+	// if err != nil {
+	// 	log.Fatalf("Не удалось расшифровать мастер-ключ: %v", err)
+	// }
+	fileUsecase := usecase.New(pgRepo)
 
 	// Создаем менеджер JWT
 	tokenManager := auth.NewTokenManager(cfg.JWT)

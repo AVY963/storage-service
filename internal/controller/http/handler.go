@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 
+	"tages/internal/models"
 	"tages/internal/usecase"
 
 	"github.com/gin-gonic/gin"
@@ -20,32 +21,83 @@ func NewFileHandler(fileUsecase *usecase.Usecase) *FileHandler {
 	}
 }
 
-// UploadHandler обрабатывает загрузку файлов
+// UploadHandler обрабатывает загрузку зашифрованных файлов
 func (h *FileHandler) UploadHandler(c *gin.Context) {
-	// Получаем файл из формы
-	file, header, err := c.Request.FormFile("file")
+	// Получаем файл и метаданные из формы
+	file, err := c.FormFile("file")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "не удалось получить файл",
-		})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "не удалось получить файл"})
 		return
 	}
-	defer file.Close()
 
-	// Получаем имя файла
-	filename := header.Filename
-
-	// Получаем содержимое файла
-	data, err := io.ReadAll(file)
+	encryptedKey, err := c.FormFile("key")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "ошибка чтения файла",
-		})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "не удалось получить ключ шифрования"})
 		return
+	}
+
+	nonce, err := c.FormFile("nonce")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "не удалось получить вектор инициализации"})
+		return
+	}
+
+	filename := c.PostForm("filename")
+	if filename == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "имя файла не указано"})
+		return
+	}
+
+	// Читаем данные из файлов
+	encryptedFile, err := file.Open()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "ошибка чтения файла"})
+		return
+	}
+	defer encryptedFile.Close()
+
+	keyFile, err := encryptedKey.Open()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "ошибка чтения ключа шифрования"})
+		return
+	}
+	defer keyFile.Close()
+
+	nonceFile, err := nonce.Open()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "ошибка чтения вектора инициализации"})
+		return
+	}
+	defer nonceFile.Close()
+
+	// Читаем все данные в память
+	fileData, err := io.ReadAll(encryptedFile)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "ошибка чтения файла"})
+		return
+	}
+
+	keyData, err := io.ReadAll(keyFile)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "ошибка чтения файла"})
+		return
+	}
+	nonceData, err := io.ReadAll(nonceFile)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "ошибка чтения вектора инициализации"})
+		return
+	}
+
+	// Создаем структуру с зашифрованными данными
+	encryptedData := &models.EncryptedFileData{
+		File:     fileData,
+		Key:      keyData,
+		Nonce:    nonceData,
+		Filename: filename,
 	}
 
 	// Сохраняем файл
-	err = h.fileUsecase.Upload(c.Request.Context(), filename, data)
+	err = h.fileUsecase.Upload(c.Request.Context(), encryptedData)
 	if err != nil {
 		log.Printf("ERROR: Failed to upload file: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -54,7 +106,6 @@ func (h *FileHandler) UploadHandler(c *gin.Context) {
 		return
 	}
 
-	// Формируем успешный ответ
 	c.JSON(http.StatusOK, gin.H{
 		"success":  true,
 		"message":  "файл успешно загружен",
@@ -62,41 +113,28 @@ func (h *FileHandler) UploadHandler(c *gin.Context) {
 	})
 }
 
-// DownloadHandler обрабатывает скачивание файлов
+// DownloadHandler обрабатывает скачивание зашифрованных файлов
 func (h *FileHandler) DownloadHandler(c *gin.Context) {
 	filename := c.Param("filename")
-
 	if filename == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "имя файла не указано",
-		})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "имя файла не указано"})
 		return
 	}
 
-	// Открываем файл для чтения
-	fileReader, err := h.fileUsecase.Download(filename)
+	// Получаем зашифрованные данные
+	encryptedData, err := h.fileUsecase.Download(c.Request.Context(), filename)
 	if err != nil {
 		log.Printf("ERROR: Failed to download file: %v", err)
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": "файл не найден",
-		})
+		c.JSON(http.StatusNotFound, gin.H{"error": "файл не найден"})
 		return
 	}
-	defer fileReader.Close()
 
-	// Устанавливаем заголовки для скачивания
-	c.Header("Content-Disposition", "attachment; filename="+filename)
-	c.Header("Content-Type", "application/octet-stream")
-
-	// Копируем содержимое файла в ответ
-	_, err = io.Copy(c.Writer, fileReader)
-	if err != nil {
-		log.Printf("ERROR: Failed to send file: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "ошибка отправки файла",
-		})
-		return
-	}
+	// Отправляем зашифрованные данные клиенту
+	c.JSON(http.StatusOK, gin.H{
+		"file":  encryptedData.File,
+		"key":   encryptedData.Key,
+		"nonce": encryptedData.Nonce,
+	})
 }
 
 // ListHandler отображает список файлов
@@ -134,7 +172,6 @@ func (h *FileHandler) ListHandler(c *gin.Context) {
 // DeleteHandler удаляет файл
 func (h *FileHandler) DeleteHandler(c *gin.Context) {
 	filename := c.Param("filename")
-
 	if filename == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "имя файла не указано",

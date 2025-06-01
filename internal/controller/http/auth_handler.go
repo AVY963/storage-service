@@ -1,6 +1,7 @@
 package http
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"time"
@@ -8,6 +9,7 @@ import (
 	"tages/internal/usecase"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
 )
 
 type AuthHandler struct {
@@ -52,11 +54,36 @@ type RefreshResponse struct {
 // RegisterHandler обрабатывает регистрацию нового пользователя
 func (h *AuthHandler) RegisterHandler(c *gin.Context) {
 	var req RegisterRequest
-	log.Println(req)
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "неверный формат данных: " + err.Error(),
-		})
+		// Получаем детальные ошибки валидации
+		var validationErrors validator.ValidationErrors
+		if errors.As(err, &validationErrors) {
+			errorMap := make(map[string]string)
+			for _, e := range validationErrors {
+				field := e.Field()
+				switch field {
+				case "Email":
+					errorMap[field] = "некорректный email адрес"
+				case "Password":
+					if e.Tag() == "min" {
+						errorMap[field] = "пароль должен содержать минимум 6 символов"
+					} else {
+						errorMap[field] = "пароль обязателен"
+					}
+				default:
+					errorMap[field] = "ошибка валидации"
+				}
+			}
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "ошибка валидации данных",
+				"details": errorMap,
+			})
+		} else {
+			// Общая ошибка
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "неверный формат данных: " + err.Error(),
+			})
+		}
 		return
 	}
 
@@ -92,9 +119,31 @@ func (h *AuthHandler) RegisterHandler(c *gin.Context) {
 func (h *AuthHandler) LoginHandler(c *gin.Context) {
 	var req LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "неверный формат данных: " + err.Error(),
-		})
+		// Получаем детальные ошибки валидации
+		var validationErrors validator.ValidationErrors
+		if errors.As(err, &validationErrors) {
+			errorMap := make(map[string]string)
+			for _, e := range validationErrors {
+				field := e.Field()
+				switch field {
+				case "Email":
+					errorMap[field] = "некорректный email адрес"
+				case "Password":
+					errorMap[field] = "пароль обязателен"
+				default:
+					errorMap[field] = "ошибка валидации"
+				}
+			}
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "ошибка валидации данных",
+				"details": errorMap,
+			})
+		} else {
+			// Общая ошибка
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "неверный формат данных: " + err.Error(),
+			})
+		}
 		return
 	}
 

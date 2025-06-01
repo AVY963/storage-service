@@ -17,6 +17,7 @@ type UserRepository interface {
 	CreateUser(ctx context.Context, user *models.User) error
 	GetUserByEmail(ctx context.Context, email string) (*models.User, error)
 	GetUserByID(ctx context.Context, id uint) (*models.User, error)
+	UpdateUser(ctx context.Context, user *models.User) error
 	StoreRefreshToken(ctx context.Context, userID uint, token string, expiresAt time.Time) error
 	DeleteRefreshToken(ctx context.Context, token string) error
 	GetRefreshToken(ctx context.Context, token string) (*models.RefreshToken, error)
@@ -65,8 +66,10 @@ func (u *UserUsecase) Register(ctx context.Context, email, password string) (*mo
 
 	// Создаем нового пользователя
 	user := &models.User{
-		Email:    email,
-		Password: string(hashedPassword),
+		Email:     email,
+		Password:  string(hashedPassword),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
 	}
 
 	if err := u.userRepo.CreateUser(ctx, user); err != nil {
@@ -107,6 +110,15 @@ func (u *UserUsecase) Login(ctx context.Context, email, password string) (*model
 	// Проверяем пароль
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
 		return nil, nil, ErrInvalidCredentials
+	}
+
+	// Обновляем время последнего входа
+	user.UpdatedAt = time.Now()
+
+	// Сохраняем обновленное время
+	if err := u.userRepo.UpdateUser(ctx, user); err != nil {
+		log.Printf("WARN: Failed to update user last login time: %v", err)
+		// Продолжаем выполнение даже при ошибке - это не критично
 	}
 
 	// Генерируем токены

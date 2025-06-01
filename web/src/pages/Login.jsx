@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthContext";
+import validator from "validator";
 import { 
   Box,
   Button,
@@ -11,7 +12,8 @@ import {
   Avatar,
   Grid,
   Alert,
-  Snackbar
+  Snackbar,
+  FormHelperText
 } from '@mui/material';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 
@@ -20,43 +22,111 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [openSnackbar, setOpenSnackbar] = useState(false);
+  const [emailError, setEmailError] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, register } = useAuth();
+
+  // Функция для валидации email
+  const validateEmail = (email) => {
+    if (!email) {
+      return "Email обязателен";
+    }
+    if (!validator.isEmail(email)) {
+      return "Некорректный формат email";
+    }
+    return "";
+  };
+
+  // Функция для валидации пароля
+  const validatePassword = (password) => {
+    if (!password) {
+      return "Пароль обязателен";
+    }
+    if (!validator.isLength(password, { min: 6 })) {
+      return "Пароль должен содержать минимум 6 символов";
+    }
+    return "";
+  };
+
+  // Функция для валидации формы
+  const validateForm = () => {
+    const emailErr = validateEmail(email);
+    const passwordErr = validatePassword(password);
+    
+    setEmailError(emailErr);
+    setPasswordError(passwordErr);
+    
+    return !emailErr && !passwordErr;
+  };
 
   const handleLogin = async () => {
+    if (!validateForm() || isSubmitting) {
+      return;
+    }
+
     try {
-      const success = await login(email, password);
-      if (success) {
+      setIsSubmitting(true);
+      const result = await login(email, password);
+      
+      if (result.success) {
         navigate("/files");
       } else {
-        setError("Неверные учетные данные");
+        setError(result.error);
         setOpenSnackbar(true);
       }
     } catch (err) {
-      setError("Ошибка авторизации");
+      setError("Ошибка авторизации: " + err.message);
       setOpenSnackbar(true);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleRegister = async () => {
+    if (!validateForm() || isSubmitting) {
+      return;
+    }
+
     try {
-      const res = await fetch("http://localhost:8080/api/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
+      setIsSubmitting(true);
       
-      if (res.ok) {
-        handleLogin(); // регистрируем и сразу логиним
+      // Сначала регистрируем пользователя
+      const registerResult = await register(email, password);
+      
+      if (registerResult.success) {
+        // Если регистрация успешна, выполняем вход
+        const loginResult = await login(email, password);
+        
+        if (loginResult.success) {
+          navigate("/files");
+        } else {
+          setError("Регистрация успешна, но не удалось войти: " + loginResult.error);
+          setOpenSnackbar(true);
+        }
       } else {
-        const errorData = await res.json();
-        setError(errorData.message || "Ошибка регистрации");
+        setError(registerResult.error);
         setOpenSnackbar(true);
       }
     } catch (err) {
-      setError("Ошибка сервера");
+      setError("Ошибка регистрации: " + err.message);
       setOpenSnackbar(true);
+    } finally {
+      setIsSubmitting(false);
     }
+  };
+
+  const handleEmailChange = (e) => {
+    const value = e.target.value;
+    setEmail(value);
+    setEmailError(""); // Сбрасываем ошибку при изменении поля
+  };
+
+  const handlePasswordChange = (e) => {
+    const value = e.target.value;
+    setPassword(value);
+    setPasswordError(""); // Сбрасываем ошибку при изменении поля
   };
 
   const handleSubmit = (e) => {
@@ -95,7 +165,11 @@ export default function LoginPage() {
               autoComplete="email"
               autoFocus
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={handleEmailChange}
+              error={!!emailError}
+              helperText={emailError}
+              onBlur={() => setEmailError(validateEmail(email))}
+              disabled={isSubmitting}
             />
             <TextField
               margin="normal"
@@ -107,7 +181,11 @@ export default function LoginPage() {
               id="password"
               autoComplete="current-password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={handlePasswordChange}
+              error={!!passwordError}
+              helperText={passwordError}
+              onBlur={() => setPasswordError(validatePassword(password))}
+              disabled={isSubmitting}
             />
             
             <Grid container spacing={2} sx={{ mt: 2 }}>
@@ -117,8 +195,9 @@ export default function LoginPage() {
                   fullWidth
                   variant="contained"
                   color="primary"
+                  disabled={isSubmitting || !!emailError || !!passwordError}
                 >
-                  Войти
+                  {isSubmitting ? 'Вход...' : 'Войти'}
                 </Button>
               </Grid>
               <Grid item xs={12}>
@@ -126,8 +205,9 @@ export default function LoginPage() {
                   fullWidth
                   variant="outlined"
                   onClick={handleRegister}
+                  disabled={isSubmitting || !!emailError || !!passwordError}
                 >
-                  Регистрация
+                  {isSubmitting ? 'Обработка...' : 'Регистрация'}
                 </Button>
               </Grid>
             </Grid>

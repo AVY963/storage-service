@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"tages/internal/repository/pg"
 
 	"github.com/spf13/viper"
@@ -33,7 +34,9 @@ type JWT struct {
 	RefreshTokenSecret     string `mapstructure:"refreshTokenSecret"`
 }
 
+
 func InitConfig(path string) (*Config, error) {
+	// Если есть файл конфигурации — читаем
 	if path != "" {
 		viper.SetConfigFile(path)
 	} else {
@@ -42,34 +45,34 @@ func InitConfig(path string) (*Config, error) {
 		viper.SetConfigType("yaml")
 	}
 
-	if err := viper.ReadInConfig(); err != nil {
-		return nil, err
-	}
+	// Чтение из файла
+	_ = viper.ReadInConfig() // игнорируем ошибку, если файла нет
+
+	// Поддержка переменных окружения
+	viper.AutomaticEnv()
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
 	var cfg Config
 	if err := viper.Unmarshal(&cfg); err != nil {
 		return nil, err
 	}
 
-	// Значения по умолчанию для HTTP
+	// Значения по умолчанию
 	if cfg.HTTP == nil {
 		cfg.HTTP = &HTTP{
-			Port:            "8080",
+			Port:            "8081",
 			ReadTimeout:     15,
 			WriteTimeout:    15,
 			ShutdownTimeout: 5,
 		}
 	}
-
-	// Значения по умолчанию для JWT
 	if cfg.JWT == nil {
 		cfg.JWT = &JWT{
-			AccessTokenExpiration:  15,     // 15 минут по умолчанию
-			RefreshTokenExpiration: 24 * 7, // 7 дней по умолчанию
+			AccessTokenExpiration:  15,
+			RefreshTokenExpiration: 24 * 7,
 			AccessTokenSecret:      "access_secret_key_change_in_production",
 			RefreshTokenSecret:     "refresh_secret_key_change_in_production",
 		}
 	}
-
 	return &cfg, nil
 }
