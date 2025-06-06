@@ -9,13 +9,14 @@ import (
 )
 
 // SaveFile сохраняет зашифрованный файл в базу данных
-func (p *Repository) SaveFile(filename string, data []byte, key []byte, nonce []byte) error {
+func (p *Repository) SaveFile(filename string, data []byte, key []byte, nonce []byte, userID uint) error {
 	now := time.Now()
 	_, err := p.pool.Exec(context.Background(), SaveFileQuery,
 		filename,
 		data,
 		key,
 		nonce,
+		userID,
 		now, // created_at
 		now, // updated_at
 	)
@@ -26,11 +27,11 @@ func (p *Repository) SaveFile(filename string, data []byte, key []byte, nonce []
 }
 
 // ReadFile читает зашифрованный файл из базы данных
-func (p *Repository) ReadFile(filename string) (*models.EncryptedFileData, error) {
+func (p *Repository) ReadFile(filename string, userID uint) (*models.EncryptedFileData, error) {
 	var data models.EncryptedFileData
 	data.Filename = filename
 
-	err := p.pool.QueryRow(context.Background(), ReadFileQuery, filename).Scan(&data.File, &data.Key, &data.Nonce)
+	err := p.pool.QueryRow(context.Background(), ReadFileQuery, filename, userID).Scan(&data.File, &data.Key, &data.Nonce)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file from database: %w", err)
 	}
@@ -39,8 +40,8 @@ func (p *Repository) ReadFile(filename string) (*models.EncryptedFileData, error
 }
 
 // DeleteFile удаляет файл из базы данных
-func (p *Repository) DeleteFile(ctx context.Context, filename string) error {
-	result, err := p.pool.Exec(ctx, DeleteFileQuery, filename)
+func (p *Repository) DeleteFile(ctx context.Context, filename string, userID uint) error {
+	result, err := p.pool.Exec(ctx, DeleteFileQuery, filename, userID)
 	if err != nil {
 		return fmt.Errorf("failed to delete file meta for %s: %w", filename, err)
 	}
@@ -53,11 +54,10 @@ func (p *Repository) DeleteFile(ctx context.Context, filename string) error {
 	return nil
 }
 
-
 // Методы для работы с метаданными
 
 func (p *Repository) SaveFileMeta(ctx context.Context, file *models.FileMeta) error {
-	exists, err := p.IsFileExists(ctx, file.Name)
+	exists, err := p.IsFileExists(ctx, file.Name, file.UserID)
 	if err != nil {
 		return fmt.Errorf("failed to check file existence: %w", err)
 	}
@@ -70,7 +70,8 @@ func (p *Repository) SaveFileMeta(ctx context.Context, file *models.FileMeta) er
 		file.Name,
 		file.EncryptedKey,
 		file.Nonce,
-		file.UpdatedAt)
+		file.UpdatedAt,
+		file.UserID)
 	if err != nil {
 		return fmt.Errorf("failed to save file meta for %s: %w", file.Name, err)
 	}
@@ -83,9 +84,9 @@ func (p *Repository) SaveFileMeta(ctx context.Context, file *models.FileMeta) er
 	return nil
 }
 
-func (p *Repository) IsFileExists(ctx context.Context, filename string) (bool, error) {
+func (p *Repository) IsFileExists(ctx context.Context, filename string, userID uint) (bool, error) {
 	var exists bool
-	err := p.pool.QueryRow(ctx, IsFileExistsQuery, filename).Scan(&exists)
+	err := p.pool.QueryRow(ctx, IsFileExistsQuery, filename, userID).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("failed to check existence of file %s: %w", filename, err)
 	}
@@ -97,7 +98,8 @@ func (p *Repository) UpdateFileMeta(ctx context.Context, file *models.FileMeta) 
 		file.Name,
 		file.EncryptedKey,
 		file.Nonce,
-		file.UpdatedAt)
+		file.UpdatedAt,
+		file.UserID)
 	if err != nil {
 		return fmt.Errorf("failed to update file meta for %s: %w", file.Name, err)
 	}
@@ -110,8 +112,8 @@ func (p *Repository) UpdateFileMeta(ctx context.Context, file *models.FileMeta) 
 	return nil
 }
 
-func (p *Repository) GetFilesMeta(ctx context.Context) ([]*models.FileMeta, error) {
-	rows, err := p.pool.Query(ctx, GetFilesMetaQuery)
+func (p *Repository) GetFilesMeta(ctx context.Context, userID uint) ([]*models.FileMeta, error) {
+	rows, err := p.pool.Query(ctx, GetFilesMetaQuery, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query files meta: %w", err)
 	}
@@ -130,6 +132,7 @@ func (p *Repository) GetFilesMeta(ctx context.Context) ([]*models.FileMeta, erro
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan file meta row: %w", err)
 		}
+		file.UserID = userID
 		files = append(files, &file)
 	}
 
@@ -140,8 +143,8 @@ func (p *Repository) GetFilesMeta(ctx context.Context) ([]*models.FileMeta, erro
 	return files, nil
 }
 
-func (p *Repository) DeleteFileMeta(ctx context.Context, filename string) error {
-	result, err := p.pool.Exec(ctx, DeleteFileMetaQuery, filename)
+func (p *Repository) DeleteFileMeta(ctx context.Context, filename string, userID uint) error {
+	result, err := p.pool.Exec(ctx, DeleteFileMetaQuery, filename, userID)
 	if err != nil {
 		return fmt.Errorf("failed to delete file meta for %s: %w", filename, err)
 	}

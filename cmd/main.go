@@ -43,13 +43,7 @@ func main() {
 
 	// Создаем репозитории и usecase
 	pgRepo := pg.New(pool)
-	// fileStorage := storage.New(cfg.App.UploadDir, pgRepo)
 
-	// Достаем и расшифровываем мастер-ключ
-	// masterKey, err := crypto.DecryptMasterKey()
-	// if err != nil {
-	// 	log.Fatalf("Не удалось расшифровать мастер-ключ: %v", err)
-	// }
 	fileUsecase := usecase.New(pgRepo)
 
 	// Создаем менеджер JWT

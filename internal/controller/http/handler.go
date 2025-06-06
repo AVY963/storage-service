@@ -23,6 +23,13 @@ func NewFileHandler(fileUsecase *usecase.Usecase) *FileHandler {
 
 // UploadHandler обрабатывает загрузку зашифрованных файлов
 func (h *FileHandler) UploadHandler(c *gin.Context) {
+	// Получаем ID пользователя из контекста
+	userID, exists := GetUserID(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "пользователь не авторизован"})
+		return
+	}
+
 	// Получаем файл и метаданные из формы
 	file, err := c.FormFile("file")
 	if err != nil {
@@ -96,8 +103,8 @@ func (h *FileHandler) UploadHandler(c *gin.Context) {
 		Filename: filename,
 	}
 
-	// Сохраняем файл
-	err = h.fileUsecase.Upload(c.Request.Context(), encryptedData)
+	// Сохраняем файл с указанием пользователя
+	err = h.fileUsecase.Upload(c.Request.Context(), encryptedData, userID)
 	if err != nil {
 		log.Printf("ERROR: Failed to upload file: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -115,14 +122,21 @@ func (h *FileHandler) UploadHandler(c *gin.Context) {
 
 // DownloadHandler обрабатывает скачивание зашифрованных файлов
 func (h *FileHandler) DownloadHandler(c *gin.Context) {
+	// Получаем ID пользователя из контекста
+	userID, exists := GetUserID(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "пользователь не авторизован"})
+		return
+	}
+
 	filename := c.Param("filename")
 	if filename == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "имя файла не указано"})
 		return
 	}
 
-	// Получаем зашифрованные данные
-	encryptedData, err := h.fileUsecase.Download(c.Request.Context(), filename)
+	// Получаем зашифрованные данные для конкретного пользователя
+	encryptedData, err := h.fileUsecase.Download(c.Request.Context(), filename, userID)
 	if err != nil {
 		log.Printf("ERROR: Failed to download file: %v", err)
 		c.JSON(http.StatusNotFound, gin.H{"error": "файл не найден"})
@@ -139,7 +153,14 @@ func (h *FileHandler) DownloadHandler(c *gin.Context) {
 
 // ListHandler отображает список файлов
 func (h *FileHandler) ListHandler(c *gin.Context) {
-	files, err := h.fileUsecase.ListFiles(c.Request.Context())
+	// Получаем ID пользователя из контекста
+	userID, exists := GetUserID(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "пользователь не авторизован"})
+		return
+	}
+
+	files, err := h.fileUsecase.ListFiles(c.Request.Context(), userID)
 	if err != nil {
 		log.Printf("ERROR: Failed to list files: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -171,6 +192,13 @@ func (h *FileHandler) ListHandler(c *gin.Context) {
 
 // DeleteHandler удаляет файл
 func (h *FileHandler) DeleteHandler(c *gin.Context) {
+	// Получаем ID пользователя из контекста
+	userID, exists := GetUserID(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "пользователь не авторизован"})
+		return
+	}
+
 	filename := c.Param("filename")
 	if filename == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -179,7 +207,7 @@ func (h *FileHandler) DeleteHandler(c *gin.Context) {
 		return
 	}
 
-	err := h.fileUsecase.DeleteFile(c.Request.Context(), filename)
+	err := h.fileUsecase.DeleteFile(c.Request.Context(), filename, userID)
 	if err != nil {
 		log.Printf("ERROR: Failed to delete file: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{

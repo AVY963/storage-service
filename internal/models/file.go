@@ -4,6 +4,7 @@ import "time"
 
 type FileMeta struct {
 	Name      string
+	UserID    uint // ID пользователя, которому принадлежит файл
 	CreatedAt time.Time
 	UpdatedAt time.Time
 	// Поля для шифрования
@@ -24,8 +25,3 @@ type EncryptedFileData struct {
 	Filename string // Оригинальное имя файла
 }
 
-// type EncryptedFileData struct {
-// 	File     []byte // Зашифрованный файл
-// 	Key      []byte // Зашифрованный AES ключ
-// 	Nonce    []byte // Вектор инициализации
-// }

@@ -3,33 +3,34 @@ package pg
 const (
 	// Запросы для работы с файлами
 	SaveFileQuery = `
-		INSERT INTO encrypted_files (filename, file_data, encrypted_key, nonce, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		ON CONFLICT (filename) DO UPDATE
+		INSERT INTO encrypted_files (filename, file_data, encrypted_key, nonce, user_id, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (filename, user_id) DO UPDATE
 		SET file_data = $2, 
 		    encrypted_key = $3, 
 		    nonce = $4,
-		    updated_at = $6
+		    updated_at = $7
 	`
 
 	ReadFileQuery = `
 		SELECT file_data, encrypted_key, nonce
 		FROM encrypted_files
-		WHERE filename = $1
+		WHERE filename = $1 AND user_id = $2
 	`
 
 	DeleteFileQuery = `
-		DELETE FROM encrypted_files WHERE filename = $1
+		DELETE FROM encrypted_files WHERE filename = $1 AND user_id = $2
 	`
 
 	// Запросы для работы с метаданными файлов
 	IsFileExistsQuery = `
-		SELECT EXISTS(SELECT 1 FROM encrypted_files WHERE filename = $1)
+		SELECT EXISTS(SELECT 1 FROM encrypted_files WHERE filename = $1 AND user_id = $2)
 	`
 
 	GetFilesMetaQuery = `
 		SELECT filename, encrypted_key, nonce, created_at, updated_at 
 		FROM encrypted_files 
+		WHERE user_id = $1
 		ORDER BY created_at DESC
 	`
 
@@ -38,11 +39,11 @@ const (
 		SET encrypted_key = $2,
 		    nonce = $3,
 		    updated_at = $4
-		WHERE filename = $1
+		WHERE filename = $1 AND user_id = $5
 	`
 
 	DeleteFileMetaQuery = `
-		DELETE FROM encrypted_files WHERE filename = $1
+		DELETE FROM encrypted_files WHERE filename = $1 AND user_id = $2
 	`
 
 	// Запросы для пользователей
